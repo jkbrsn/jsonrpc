@@ -18,14 +18,42 @@ permissions:
 
 env:
   GO_VERSION: 1.25.3
-  GOLANGCI_LINT_VERSION: v2.5.0
+  GOLANGCI_LINT_VERSION: v2.6.2
 
 jobs:
+  initialize:
+    name: Initialize inputs
+    runs-on: ubuntu-24.04
+    outputs:
+      raw_input: ${{ steps.norm.outputs.raw_input }}
+      base_version: ${{ steps.norm.outputs.base_version }}
+    steps:
+      - name: Normalize version input
+        id: norm
+        shell: bash
+        run: |
+          set -euo pipefail
+          RAW_INPUT="${{ github.event.inputs.version }}"
+          RAW_INPUT="$(echo "$RAW_INPUT" | xargs)"
+          INPUT_NO_V="${RAW_INPUT#v}"
+
+          # final-only semver
+          if [[ "$INPUT_NO_V" =~ ^([0-9]+(\.[0-9]+){2})$ ]]; then
+            BASE_VERSION="${BASH_REMATCH[1]}"
+          else
+            echo "::error::Input must be final SemVer like 0.1.2 or v0.1.2. Do not include -rc; use prerelease checkbox instead."
+            exit 1
+          fi
+
+          echo "raw_input=$RAW_INPUT"     >> "$GITHUB_OUTPUT"
+          echo "base_version=$BASE_VERSION" >> "$GITHUB_OUTPUT"
+
   version-bump-check:
     name: Version bump check
     runs-on: ubuntu-24.04
+    needs: [initialize]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
           fetch-depth: 0
 
@@ -34,17 +62,8 @@ jobs:
         run: |
           set -euo pipefail
 
-          RAW_INPUT="${{ github.event.inputs.version }}"
-          RAW_INPUT="${RAW_INPUT## }"; RAW_INPUT="${RAW_INPUT%% }"   # trim just in case
-          INPUT_NO_V="${RAW_INPUT#v}"
-
-          # Accept SemVer with optional pre-release/+build; capture base X.Y.Z and optional rc number if present
-          if [[ "$INPUT_NO_V" =~ ^([0-9]+(\.[0-9]+){2})(-rc\.?([0-9]+))?([+][0-9A-Za-z\.-]+)?$ ]]; then
-            BASE_VERSION="${BASH_REMATCH[1]}"   # X.Y.Z
-          else
-            echo "::error::Input must be SemVer like 0.1.2, 1.2.3-rc.1, or v1.2.3"
-            exit 1
-          fi
+          RAW_INPUT="${{ needs.initialize.outputs.raw_input }}"
+          BASE_VERSION="${{ needs.initialize.outputs.base_version }}"
 
           # Latest FINAL tag strictly vX.Y.Z (ignore prereleases)
           LATEST_FINAL_TAG=$(git tag --list 'v[0-9]*' \
@@ -57,35 +76,81 @@ jobs:
           echo "Requested base:   $BASE_VERSION (from input: $RAW_INPUT)"
 
           # Require strictly newer than latest FINAL
+          if [[ "$BASE_VERSION" == "$OLD_FINAL_VERSION" ]]; then
+            echo "::error::Requested version $BASE_VERSION must be greater than latest final $OLD_FINAL_VERSION"
+            exit 1
+          fi
           if [[ "$(printf '%s\n' "$OLD_FINAL_VERSION" "$BASE_VERSION" | sort -V | tail -n1)" != "$BASE_VERSION" ]]; then
-            echo "::error::Requested $BASE_VERSION must be greater than latest final $OLD_FINAL_VERSION"
+            echo "::error::Requested version $BASE_VERSION must be greater than latest final $OLD_FINAL_VERSION"
             exit 1
           fi
 
           echo "OK: $OLD_FINAL_VERSION → $BASE_VERSION"
 
-  release:
-    name: Test, tag & release
-    needs: [version-bump-check]
+  test-race:
+    name: Test race
     runs-on: ubuntu-24.04
+    needs: [version-bump-check]
     steps:
-      - uses: actions/checkout@v5
+      - uses: actions/checkout@v6
         with:
-          fetch-depth: 0
+          fetch-depth: 1
 
       - uses: actions/setup-go@v6
         with:
           go-version: ${{ env.GO_VERSION }}
 
-      - name: Run golangci-lint
-        uses: golangci/golangci-lint-action@v8
+      - name: Run race tests (1x -race -shuffle)
+        shell: bash
+        run: go test -mod=readonly ./... -count=1 -shuffle=on -race
+
+  test-flaky:
+    name: Test flaky
+    runs-on: ubuntu-24.04
+    needs: [version-bump-check]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: Run flaky tests (16x -shuffle)
+        shell: bash
+        run: go test -mod=readonly ./... -count=16 -shuffle=on
+
+  golangci-lint:
+    runs-on: ubuntu-24.04
+    needs: [version-bump-check]
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - uses: actions/setup-go@v6
+        with:
+          go-version: ${{ env.GO_VERSION }}
+
+      - name: lint
+        uses: golangci/golangci-lint-action@v9
         with:
           version: ${{ env.GOLANGCI_LINT_VERSION }}
           args: -v
 
-      - name: Run tests (-race)
-        shell: bash
-        run: go test -mod=readonly ./... -count=1 -race
+  release:
+    name: Tag & release
+    needs: [initialize, version-bump-check, test-race, test-flaky, golangci-lint]
+    runs-on: ubuntu-24.04
+    outputs:
+      version: ${{ steps.compute_tag.outputs.version }}
+      tag: ${{ steps.compute_tag.outputs.tag }}
+      is_prerelease: ${{ steps.compute_tag.outputs.is_prerelease }}
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
 
       - name: Compute tag (final or next -rc.N from input)
         id: compute_tag
@@ -94,17 +159,7 @@ jobs:
           set -euo pipefail
 
           PRERELEASE="${{ github.event.inputs.prerelease }}"
-          RAW_INPUT="${{ github.event.inputs.version }}"
-          INPUT_NO_V="${RAW_INPUT#v}"
-
-          # Parse input: base X.Y.Z and optional rc number if provided
-          if [[ "$INPUT_NO_V" =~ ^([0-9]+(\.[0-9]+){2})(-rc\.?([0-9]+))?([+][0-9A-Za-z\.-]+)?$ ]]; then
-            BASE_VERSION="${BASH_REMATCH[1]}"
-            RC_NUM="${BASH_REMATCH[4]:-}"
-          else
-            echo "::error::Input must be SemVer like 0.1.2, 1.2.3-rc.1, or v1.2.3"
-            exit 1
-          fi
+          BASE_VERSION="${{ needs.initialize.outputs.base_version }}"
 
           final_exists() { git rev-parse "v${BASE_VERSION}" >/dev/null 2>&1; }
 
@@ -133,12 +188,7 @@ jobs:
           fi
 
           if [[ "$PRERELEASE" == "true" ]]; then
-            if [[ -n "${RC_NUM}" ]]; then
-              # Honor explicit -rc.N if provided in input
-              TAG="v${BASE_VERSION}-rc.${RC_NUM}"
-            else
-              TAG="$(next_rc_tag "$BASE_VERSION")"
-            fi
+            TAG="$(next_rc_tag "$BASE_VERSION")"
             IS_PRE="true"
           else
             TAG="v${BASE_VERSION}"
@@ -197,9 +247,9 @@ jobs:
         if: ${{ steps.compute_tag.outputs.is_prerelease == 'false' }}
         uses: orhun/git-cliff-action@v4
         with:
-          # If no previous final tag, this produces an empty range; optionally
-          # fall back to the root commit if you want *all* history instead.
-          args: "${{ steps.prev_final.outputs.prev }}..${{ steps.compute_tag.outputs.tag }} --no-exec"
+          args: ${{ steps.prev_final.outputs.prev != '' &&
+                  format('{0}..{1} --no-exec', steps.prev_final.outputs.prev, steps.compute_tag.outputs.tag) ||
+                  '--current --no-exec' }}
         env:
           GITHUB_REPO:  ${{ github.repository }}
           GITHUB_TOKEN: ${{ github.token }}
@@ -215,3 +265,38 @@ jobs:
           prerelease: ${{ steps.compute_tag.outputs.is_prerelease }}
         env:
           GITHUB_TOKEN: ${{ github.token }}
+
+  summary:
+    name: Release summary
+    runs-on: ubuntu-24.04
+    needs: [initialize, version-bump-check, test-race, test-flaky, golangci-lint, release]
+    if: ${{ always() }}  # ensure this job runs even if dependencies failed
+    steps:
+      - name: Write release summary
+        run: |
+          {
+            echo "## 🚀 Release Summary"
+            echo ""
+            echo "### Job Status"
+            echo "- Initialize:        ${{ needs.initialize.result }}"
+            echo "- Version bump:      ${{ needs['version-bump-check'].result }}"
+            echo "- Tests (race):      ${{ needs['test-race'].result }}"
+            echo "- Tests (flaky):     ${{ needs['test-flaky'].result }}"
+            echo "- Lint:              ${{ needs.golangci-lint.result }}"
+            echo "- Release:           ${{ needs.release.result }}"
+            echo ""
+            # Only print release details/links if the release job succeeded and produced outputs
+            if [ "${{ needs.release.result }}" = "success" ] && [ -n "${{ needs.release.outputs.tag }}" ]; then
+              echo "### Release"
+              echo "- **Version:** \`${{ needs.release.outputs.version }}\`"
+              echo "- **Tag:** \`${{ needs.release.outputs.tag }}\`"
+              echo "- **Prerelease:** \`${{ needs.release.outputs.is_prerelease }}\`"
+              echo "- **Release page:** [${{ needs.release.outputs.tag }}](${{ github.server_url }}/${{ github.repository }}/releases/tag/${{ needs.release.outputs.tag }})"
+            else
+              echo "> Release not created (see job statuses above)."
+            fi
+            echo ""
+            echo "Triggered by: @${{ github.actor }}"
+            echo "Commit: [${{ github.sha }}](${{ github.server_url }}/${{ github.repository }}/commit/${{ github.sha }})"
+            echo "[View workflow run](${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }})"
+          } >> "$GITHUB_STEP_SUMMARY"
