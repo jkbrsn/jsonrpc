@@ -43,3 +43,8 @@ decode with either sonic or stdlib. Custom `UnmarshalJSON` validates fields;
 - Flexible error unmarshaling for custom error handling.
 - Zero error codes are valid per spec, but `IsEmpty()` treats them as empty
   when the message is also empty.
+
+## PR/Commit Standards
+
+- Conventional commits: `feat:`, `fix:`, `docs:`, `chore(scope):`.
+- `make lint && make test` must pass.
