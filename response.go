@@ -154,19 +154,21 @@ func (r *Response) String() string {
 // Validate checks if the Response conforms to the JSON-RPC 2.0 specification. The version
 // field must be exactly "2.0"; this strict check is used on the encode path.
 func (r *Response) Validate() error {
-	return r.validate(true)
-}
-
-// validate checks Response invariants. When strictVersion is true the jsonrpc field must be
-// exactly "2.0". The decode path passes false because the version has already been checked
-// against the (possibly relaxed) accepted set, preserving the decoded value as-is.
-func (r *Response) validate(strictVersion bool) error {
 	if r == nil {
 		return errors.New("response is nil")
 	}
-
-	if strictVersion && r.jsonrpc != jsonRPCVersion {
+	if r.jsonrpc != jsonRPCVersion {
 		return fmt.Errorf("invalid jsonrpc version: %s", r.jsonrpc)
+	}
+	return r.validateInvariants()
+}
+
+// validateInvariants checks Response invariants other than the strict version. The decode
+// path calls this directly because the version has already been checked against the
+// (possibly relaxed) accepted set, preserving the decoded value as-is.
+func (r *Response) validateInvariants() error {
+	if r == nil {
+		return errors.New("response is nil")
 	}
 
 	// Normalize int to int64 for consistency
@@ -303,7 +305,9 @@ func DecodeResponse(data []byte, opts ...DecodeOption) (*Response, error) {
 
 // DecodeResponseFromReader parses and returns a new Response from an io.Reader.
 // expectedSize is optional and used for internal buffer sizing; pass 0 if unknown.
-func DecodeResponseFromReader(r io.Reader, expectedSize int, opts ...DecodeOption) (*Response, error) {
+func DecodeResponseFromReader(
+	r io.Reader, expectedSize int, opts ...DecodeOption,
+) (*Response, error) {
 	if r == nil {
 		return nil, errors.New("cannot read from nil reader")
 	}

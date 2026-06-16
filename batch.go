@@ -17,7 +17,9 @@ func isBatchJSON(data []byte) bool {
 // DecodeRequestOrBatch attempts to parse either a single request or a batch of requests.
 // - For single requests: returns slice with one element
 // - For batch requests: returns slice with multiple elements
-func DecodeRequestOrBatch(data []byte, opts ...DecodeOption) (reqs []*Request, isBatch bool, err error) {
+func DecodeRequestOrBatch(
+	data []byte, opts ...DecodeOption,
+) (reqs []*Request, isBatch bool, err error) {
 	if len(bytes.TrimSpace(data)) == 0 {
 		return nil, false, errors.New(errEmptyData)
 	}
@@ -37,7 +39,9 @@ func DecodeRequestOrBatch(data []byte, opts ...DecodeOption) (reqs []*Request, i
 // DecodeResponseOrBatch attempts to parse either a single response or a batch of responses.
 // - For single responses: returns slice with one element
 // - For batch responses: returns slice with multiple elements
-func DecodeResponseOrBatch(data []byte, opts ...DecodeOption) (resps []*Response, isBatch bool, err error) {
+func DecodeResponseOrBatch(
+	data []byte, opts ...DecodeOption,
+) (resps []*Response, isBatch bool, err error) {
 	if len(bytes.TrimSpace(data)) == 0 {
 		return nil, false, errors.New(errEmptyData)
 	}
@@ -162,7 +166,9 @@ func EncodeBatchResponse(resps []*Response) ([]byte, error) {
 }
 
 // DecodeBatchRequestFromReader parses a JSON-RPC batch request from an io.Reader.
-func DecodeBatchRequestFromReader(r io.Reader, expectedSize int, opts ...DecodeOption) ([]*Request, error) {
+func DecodeBatchRequestFromReader(
+	r io.Reader, expectedSize int, opts ...DecodeOption,
+) ([]*Request, error) {
 	if r == nil {
 		return nil, errors.New("cannot read from nil reader")
 	}
@@ -177,7 +183,9 @@ func DecodeBatchRequestFromReader(r io.Reader, expectedSize int, opts ...DecodeO
 }
 
 // DecodeBatchResponseFromReader parses a JSON-RPC batch response from an io.Reader.
-func DecodeBatchResponseFromReader(r io.Reader, expectedSize int, opts ...DecodeOption) ([]*Response, error) {
+func DecodeBatchResponseFromReader(
+	r io.Reader, expectedSize int, opts ...DecodeOption,
+) ([]*Response, error) {
 	if r == nil {
 		return nil, errors.New("cannot read from nil reader")
 	}

@@ -227,7 +227,7 @@ func (r *Response) parseFromBytes(data []byte, opts decodeOptions) error {
 
 	// Version is already validated above against the (possibly relaxed) decode set, so
 	// skip the strict version check here; it is enforced on the encode path instead.
-	if err := r.validate(false); err != nil {
+	if err := r.validateInvariants(); err != nil {
 		return fmt.Errorf("failed to parse JSON-RPC response: %w", err)
 	}
 

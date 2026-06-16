@@ -29,7 +29,8 @@ func TestWithAllowJSONRPC1_Response(t *testing.T) {
 	})
 
 	t.Run("explicit 1.0 version string decodes with option", func(t *testing.T) {
-		resp, err := DecodeResponse([]byte(`{"jsonrpc":"1.0","result":42,"error":null,"id":1}`), WithAllowJSONRPC1())
+		data := []byte(`{"jsonrpc":"1.0","result":42,"error":null,"id":1}`)
+		resp, err := DecodeResponse(data, WithAllowJSONRPC1())
 		require.NoError(t, err)
 		assert.Equal(t, "1.0", resp.Version())
 	})
@@ -44,14 +45,16 @@ func TestWithAllowJSONRPC1_Response(t *testing.T) {
 	})
 
 	t.Run("real error still decodes as error", func(t *testing.T) {
-		resp, err := DecodeResponse([]byte(`{"jsonrpc":"2.0","error":{"code":-32601,"message":"Method not found"},"id":1}`))
+		data := []byte(`{"jsonrpc":"2.0","error":{"code":-32601,"message":"nope"},"id":1}`)
+		resp, err := DecodeResponse(data)
 		require.NoError(t, err)
 		require.NotNil(t, resp.Err())
 		assert.Equal(t, -32601, resp.Err().Code)
 	})
 
 	t.Run("1.0 error response with null result decodes as error", func(t *testing.T) {
-		resp, err := DecodeResponse([]byte(`{"result":null,"error":{"code":-1,"message":"boom"},"id":1}`), WithAllowJSONRPC1())
+		data := []byte(`{"result":null,"error":{"code":-1,"message":"boom"},"id":1}`)
+		resp, err := DecodeResponse(data, WithAllowJSONRPC1())
 		require.NoError(t, err)
 		require.NotNil(t, resp.Err())
 		assert.Equal(t, -1, resp.Err().Code)
@@ -90,7 +93,8 @@ func TestWithAllowJSONRPC1_Request(t *testing.T) {
 	})
 
 	t.Run("1.0 notification with null id decodes", func(t *testing.T) {
-		req, err := DecodeRequest([]byte(`{"method":"notify","params":[],"id":null}`), WithAllowJSONRPC1())
+		data := []byte(`{"method":"notify","params":[],"id":null}`)
+		req, err := DecodeRequest(data, WithAllowJSONRPC1())
 		require.NoError(t, err)
 		assert.True(t, req.IsNotification())
 	})
@@ -108,7 +112,8 @@ func TestWithAllowJSONRPC1_Batch(t *testing.T) {
 	})
 
 	t.Run("response-or-batch honors option", func(t *testing.T) {
-		resps, isBatch, err := DecodeResponseOrBatch([]byte(`{"result":1,"error":null,"id":1}`), WithAllowJSONRPC1())
+		data := []byte(`{"result":1,"error":null,"id":1}`)
+		resps, isBatch, err := DecodeResponseOrBatch(data, WithAllowJSONRPC1())
 		require.NoError(t, err)
 		assert.False(t, isBatch)
 		require.Len(t, resps, 1)
@@ -140,7 +145,8 @@ func TestWithAllowJSONRPC1_RejectedVersions(t *testing.T) {
 			_, err := DecodeResponse([]byte(tc), WithAllowJSONRPC1())
 			require.Error(t, err, "unsupported version must be rejected even with the option")
 
-			_, err = DecodeRequest([]byte(`{"jsonrpc":"1.1","method":"m","id":1}`), WithAllowJSONRPC1())
+			reqData := []byte(`{"jsonrpc":"1.1","method":"m","id":1}`)
+			_, err = DecodeRequest(reqData, WithAllowJSONRPC1())
 			require.Error(t, err)
 		})
 	}
@@ -190,20 +196,23 @@ func TestWithAllowJSONRPC1_ResponseResultVariants(t *testing.T) {
 
 func TestWithAllowJSONRPC1_RequestVariants(t *testing.T) {
 	t.Run("string id with positional params", func(t *testing.T) {
-		req, err := DecodeRequest([]byte(`{"method":"sum","params":[1,2],"id":"abc"}`), WithAllowJSONRPC1())
+		data := []byte(`{"method":"sum","params":[1,2],"id":"abc"}`)
+		req, err := DecodeRequest(data, WithAllowJSONRPC1())
 		require.NoError(t, err)
 		assert.Equal(t, "abc", req.ID)
 		assert.Equal(t, []any{float64(1), float64(2)}, req.Params)
 	})
 
 	t.Run("named (object) params", func(t *testing.T) {
-		req, err := DecodeRequest([]byte(`{"method":"set","params":{"k":"v"},"id":1}`), WithAllowJSONRPC1())
+		data := []byte(`{"method":"set","params":{"k":"v"},"id":1}`)
+		req, err := DecodeRequest(data, WithAllowJSONRPC1())
 		require.NoError(t, err)
 		assert.Equal(t, map[string]any{"k": "v"}, req.Params)
 	})
 
 	t.Run("fractional id", func(t *testing.T) {
-		req, err := DecodeRequest([]byte(`{"method":"m","params":[],"id":1.5}`), WithAllowJSONRPC1())
+		data := []byte(`{"method":"m","params":[],"id":1.5}`)
+		req, err := DecodeRequest(data, WithAllowJSONRPC1())
 		require.NoError(t, err)
 		assert.Equal(t, 1.5, req.ID)
 	})
@@ -216,7 +225,8 @@ func TestWithAllowJSONRPC1_RequestVariants(t *testing.T) {
 }
 
 func TestWithAllowJSONRPC1_Reader(t *testing.T) {
-	resp, err := DecodeResponseFromReader(strings.NewReader(`{"result":953931,"error":null,"id":1}`), 0, WithAllowJSONRPC1())
+	rd := strings.NewReader(`{"result":953931,"error":null,"id":1}`)
+	resp, err := DecodeResponseFromReader(rd, 0, WithAllowJSONRPC1())
 	require.NoError(t, err)
 	var n int64
 	require.NoError(t, resp.UnmarshalResult(&n))
