@@ -137,7 +137,7 @@ func TestProfileSwitchingConcurrency(_ *testing.T) {
 
 	// Goroutine 1: Switch profiles
 	go func() {
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			SetPerformanceProfile(ProfileDefault)
 			SetPerformanceProfile(ProfileFast)
 		}
@@ -146,7 +146,7 @@ func TestProfileSwitchingConcurrency(_ *testing.T) {
 
 	// Goroutine 2: Read profile
 	go func() {
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			_ = GetPerformanceProfile()
 		}
 		done <- true
@@ -154,7 +154,7 @@ func TestProfileSwitchingConcurrency(_ *testing.T) {
 
 	// Goroutine 3: Use API
 	go func() {
-		for i := 0; i < 100; i++ {
+		for range 100 {
 			req := NewRequest("test", nil)
 			_, _ = req.MarshalJSON()
 		}

@@ -430,7 +430,7 @@ func TestLargeBatch(t *testing.T) {
 		// Create a large batch
 		methods := make([]string, 1000)
 		params := make([]any, 1000)
-		for i := 0; i < 1000; i++ {
+		for i := range 1000 {
 			methods[i] = "method"
 			params[i] = []any{i}
 		}

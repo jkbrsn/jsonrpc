@@ -16,9 +16,9 @@ import (
 func init() {
 	// Pre-compile codecs for the three core JSON-RPC types
 	types := []reflect.Type{
-		reflect.TypeOf(Request{}),
-		reflect.TypeOf(Response{}),
-		reflect.TypeOf(Error{}),
+		reflect.TypeFor[Request](),
+		reflect.TypeFor[Response](),
+		reflect.TypeFor[Error](),
 	}
 
 	// Use WithCompileMaxInlineDepth(1) to limit code bloat since these types are simple
