@@ -128,8 +128,15 @@ func (r *Request) Validate() error {
 	return nil
 }
 
-// UnmarshalJSON unmarshals a JSON-RPC request from a JSON byte slice.
+// UnmarshalJSON unmarshals a JSON-RPC request from a JSON byte slice. It enforces strict
+// JSON-RPC 2.0; use DecodeRequest with WithAllowJSONRPC1 to accept 1.0 requests.
 func (r *Request) UnmarshalJSON(data []byte) error {
+	return r.unmarshalFromBytes(data, decodeOptions{})
+}
+
+// unmarshalFromBytes unmarshals a JSON-RPC request, honoring decode options such as a
+// relaxed version check.
+func (r *Request) unmarshalFromBytes(data []byte, opts decodeOptions) error {
 	// Auxiliary type mapping to the Request structure, but with raw fields
 	type requestAux struct {
 		JSONRPC string          `json:"jsonrpc"`
@@ -143,7 +150,7 @@ func (r *Request) UnmarshalJSON(data []byte) error {
 		return err
 	}
 
-	if aux.JSONRPC != jsonRPCVersion {
+	if !versionAllowedOnDecode(aux.JSONRPC, opts.allowJSONRPC1) {
 		return errors.New("jsonrpc field is required to be exactly \"2.0\"")
 	}
 	r.JSONRPC = aux.JSONRPC
@@ -250,14 +257,14 @@ func (r *Request) UnmarshalParams(dst any) error {
 	return getSonicAPI().Unmarshal(paramBytes, dst)
 }
 
-// DecodeRequest parses a JSON-RPC request from a byte slice.
-func DecodeRequest(data []byte) (*Request, error) {
+// DecodeRequest parses a JSON-RPC request from a byte slice. Pass WithAllowJSONRPC1 to accept
+// JSON-RPC 1.0 requests; without it, decoding is strict JSON-RPC 2.0.
+func DecodeRequest(data []byte, opts ...DecodeOption) (*Request, error) {
 	if len(bytes.TrimSpace(data)) == 0 {
 		return nil, errors.New(errEmptyData)
 	}
 	req := &Request{}
-	err := req.UnmarshalJSON(data)
-	if err != nil {
+	if err := req.unmarshalFromBytes(data, applyDecodeOptions(opts)); err != nil {
 		return nil, err
 	}
 	return req, nil

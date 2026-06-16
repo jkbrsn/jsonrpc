@@ -151,13 +151,21 @@ func (r *Response) String() string {
 	return fmt.Sprintf("ID: %v, Error: %v, Result byte size: %d", r.id, r.err, len(r.result))
 }
 
-// Validate checks if the Response conforms to the JSON-RPC specification.
+// Validate checks if the Response conforms to the JSON-RPC 2.0 specification. The version
+// field must be exactly "2.0"; this strict check is used on the encode path.
 func (r *Response) Validate() error {
+	return r.validate(true)
+}
+
+// validate checks Response invariants. When strictVersion is true the jsonrpc field must be
+// exactly "2.0". The decode path passes false because the version has already been checked
+// against the (possibly relaxed) accepted set, preserving the decoded value as-is.
+func (r *Response) validate(strictVersion bool) error {
 	if r == nil {
 		return errors.New("response is nil")
 	}
 
-	if r.jsonrpc != jsonRPCVersion {
+	if strictVersion && r.jsonrpc != jsonRPCVersion {
 		return fmt.Errorf("invalid jsonrpc version: %s", r.jsonrpc)
 	}
 
@@ -269,14 +277,15 @@ func isEmptyResult(result json.RawMessage) bool {
 	return false
 }
 
-// DecodeResponse parses and returns a new Response from a byte slice.
-func DecodeResponse(data []byte) (*Response, error) {
+// DecodeResponse parses and returns a new Response from a byte slice. Pass WithAllowJSONRPC1
+// to accept JSON-RPC 1.0 responses; without it, decoding is strict JSON-RPC 2.0.
+func DecodeResponse(data []byte, opts ...DecodeOption) (*Response, error) {
 	if len(bytes.TrimSpace(data)) == 0 {
 		return nil, errors.New(errEmptyData)
 	}
 
 	resp := &Response{}
-	if err := resp.parseFromBytes(data); err != nil {
+	if err := resp.parseFromBytes(data, applyDecodeOptions(opts)); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 
@@ -294,12 +303,12 @@ func DecodeResponse(data []byte) (*Response, error) {
 
 // DecodeResponseFromReader parses and returns a new Response from an io.Reader.
 // expectedSize is optional and used for internal buffer sizing; pass 0 if unknown.
-func DecodeResponseFromReader(r io.Reader, expectedSize int) (*Response, error) {
+func DecodeResponseFromReader(r io.Reader, expectedSize int, opts ...DecodeOption) (*Response, error) {
 	if r == nil {
 		return nil, errors.New("cannot read from nil reader")
 	}
 	resp := &Response{}
-	if err := resp.parseFromReader(r, expectedSize); err != nil {
+	if err := resp.parseFromReader(r, expectedSize, applyDecodeOptions(opts)); err != nil {
 		return nil, fmt.Errorf("failed to decode response: %w", err)
 	}
 	return resp, nil

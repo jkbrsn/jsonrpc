@@ -17,17 +17,17 @@ func isBatchJSON(data []byte) bool {
 // DecodeRequestOrBatch attempts to parse either a single request or a batch of requests.
 // - For single requests: returns slice with one element
 // - For batch requests: returns slice with multiple elements
-func DecodeRequestOrBatch(data []byte) (reqs []*Request, isBatch bool, err error) {
+func DecodeRequestOrBatch(data []byte, opts ...DecodeOption) (reqs []*Request, isBatch bool, err error) {
 	if len(bytes.TrimSpace(data)) == 0 {
 		return nil, false, errors.New(errEmptyData)
 	}
 
 	if isBatchJSON(data) {
-		reqs, err := DecodeBatchRequest(data)
+		reqs, err := DecodeBatchRequest(data, opts...)
 		return reqs, true, err
 	}
 
-	req, err := DecodeRequest(data)
+	req, err := DecodeRequest(data, opts...)
 	if err != nil {
 		return nil, false, err
 	}
@@ -37,17 +37,17 @@ func DecodeRequestOrBatch(data []byte) (reqs []*Request, isBatch bool, err error
 // DecodeResponseOrBatch attempts to parse either a single response or a batch of responses.
 // - For single responses: returns slice with one element
 // - For batch responses: returns slice with multiple elements
-func DecodeResponseOrBatch(data []byte) (resps []*Response, isBatch bool, err error) {
+func DecodeResponseOrBatch(data []byte, opts ...DecodeOption) (resps []*Response, isBatch bool, err error) {
 	if len(bytes.TrimSpace(data)) == 0 {
 		return nil, false, errors.New(errEmptyData)
 	}
 
 	if isBatchJSON(data) {
-		resps, err := DecodeBatchResponse(data)
+		resps, err := DecodeBatchResponse(data, opts...)
 		return resps, true, err
 	}
 
-	resp, err := DecodeResponse(data)
+	resp, err := DecodeResponse(data, opts...)
 	if err != nil {
 		return nil, false, err
 	}
@@ -59,7 +59,7 @@ func DecodeResponseOrBatch(data []byte) (resps []*Response, isBatch bool, err er
 // - Input is not a JSON array
 // - Array is empty
 // - Any element fails to parse as a valid Request
-func DecodeBatchRequest(data []byte) ([]*Request, error) {
+func DecodeBatchRequest(data []byte, opts ...DecodeOption) ([]*Request, error) {
 	if len(bytes.TrimSpace(data)) == 0 {
 		return nil, errors.New(errEmptyData)
 	}
@@ -78,7 +78,7 @@ func DecodeBatchRequest(data []byte) ([]*Request, error) {
 	// Parse each request
 	requests := make([]*Request, 0, len(rawMessages))
 	for i, raw := range rawMessages {
-		req, err := DecodeRequest(raw)
+		req, err := DecodeRequest(raw, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("invalid request at index %d: %w", i, err)
 		}
@@ -113,7 +113,7 @@ func EncodeBatchRequest(reqs []*Request) ([]byte, error) {
 // - Input is not a JSON array
 // - Array is empty
 // - Any element fails to parse as a valid Response
-func DecodeBatchResponse(data []byte) ([]*Response, error) {
+func DecodeBatchResponse(data []byte, opts ...DecodeOption) ([]*Response, error) {
 	if len(bytes.TrimSpace(data)) == 0 {
 		return nil, errors.New(errEmptyData)
 	}
@@ -131,7 +131,7 @@ func DecodeBatchResponse(data []byte) ([]*Response, error) {
 	// Parse each response
 	responses := make([]*Response, 0, len(rawMessages))
 	for i, raw := range rawMessages {
-		resp, err := DecodeResponse(raw)
+		resp, err := DecodeResponse(raw, opts...)
 		if err != nil {
 			return nil, fmt.Errorf("invalid response at index %d: %w", i, err)
 		}
@@ -162,7 +162,7 @@ func EncodeBatchResponse(resps []*Response) ([]byte, error) {
 }
 
 // DecodeBatchRequestFromReader parses a JSON-RPC batch request from an io.Reader.
-func DecodeBatchRequestFromReader(r io.Reader, expectedSize int) ([]*Request, error) {
+func DecodeBatchRequestFromReader(r io.Reader, expectedSize int, opts ...DecodeOption) ([]*Request, error) {
 	if r == nil {
 		return nil, errors.New("cannot read from nil reader")
 	}
@@ -173,11 +173,11 @@ func DecodeBatchRequestFromReader(r io.Reader, expectedSize int) ([]*Request, er
 		return nil, fmt.Errorf("failed to read batch request: %w", err)
 	}
 
-	return DecodeBatchRequest(data)
+	return DecodeBatchRequest(data, opts...)
 }
 
 // DecodeBatchResponseFromReader parses a JSON-RPC batch response from an io.Reader.
-func DecodeBatchResponseFromReader(r io.Reader, expectedSize int) ([]*Response, error) {
+func DecodeBatchResponseFromReader(r io.Reader, expectedSize int, opts ...DecodeOption) ([]*Response, error) {
 	if r == nil {
 		return nil, errors.New("cannot read from nil reader")
 	}
@@ -188,7 +188,7 @@ func DecodeBatchResponseFromReader(r io.Reader, expectedSize int) ([]*Response, 
 		return nil, fmt.Errorf("failed to read batch response: %w", err)
 	}
 
-	return DecodeBatchResponse(data)
+	return DecodeBatchResponse(data, opts...)
 }
 
 // NewBatchRequest creates a batch of JSON-RPC requests from methods and params.

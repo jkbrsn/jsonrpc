@@ -173,6 +173,35 @@ reqs, err := jsonrpc.NewBatchNotification(
 )
 ```
 
+### JSON-RPC 1.0 Compatibility
+
+By default the decoder is strict JSON-RPC 2.0. Pass `WithAllowJSONRPC1()` to any decode
+entry point to also accept 1.0 payloads, such as those spoken by Bitcoin Core (no `jsonrpc`
+field, and `result` and `error` both present with `error: null`). The encode path is
+unaffected and always emits strict 2.0.
+
+```go
+// Bitcoin Core-style 1.0 response: {"result":953931,"error":null,"id":1}
+resp, err := jsonrpc.DecodeResponse(data, jsonrpc.WithAllowJSONRPC1())
+if err != nil {
+    // Without the option, this input is rejected as an invalid version.
+}
+
+var blockCount int
+resp.UnmarshalResult(&blockCount)
+```
+
+The option works the same way for requests and batches:
+
+```go
+req, err := jsonrpc.DecodeRequest(data, jsonrpc.WithAllowJSONRPC1())
+resps, err := jsonrpc.DecodeBatchResponse(data, jsonrpc.WithAllowJSONRPC1())
+reqs, isBatch, err := jsonrpc.DecodeRequestOrBatch(data, jsonrpc.WithAllowJSONRPC1())
+```
+
+Note that an explicit `"error": null` alongside a result is accepted even for 2.0 (without
+the option), since a null error is treated as no error.
+
 ## Performance
 
 This library is optimized for high-throughput server applications using several techniques:

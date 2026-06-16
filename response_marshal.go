@@ -1,6 +1,7 @@
 package jsonrpc
 
 import (
+	"bytes"
 	"encoding/json"
 	"errors"
 	"fmt"
@@ -17,7 +18,7 @@ type responseParseFormat struct {
 
 // responseMarshalFormat is the wire format for marshaling JSON-RPC responses.
 type responseMarshalFormat struct {
-	JSONRPC string          `json:"jsonrpc"`
+	JSONRPC string          `json:"jsonrpc,omitempty"`
 	ID      any             `json:"id"`
 	Error   *Error          `json:"error,omitempty"`
 	Result  json.RawMessage `json:"result,omitempty"`
@@ -75,7 +76,7 @@ func (r *Response) MarshalJSON() ([]byte, error) {
 // Returns an error if the data is invalid JSON, has an incorrect JSON-RPC version, contains
 // both result and error fields, or contains neither.
 func (r *Response) UnmarshalJSON(data []byte) error {
-	if err := r.parseFromBytes(data); err != nil {
+	if err := r.parseFromBytes(data, decodeOptions{}); err != nil {
 		return fmt.Errorf("failed to unmarshal JSON-RPC response: %w", err)
 	}
 
@@ -179,20 +180,30 @@ func (r *Response) UnmarshalError() error {
 // parseFromBytes parses a JSON-RPC response from a byte slice. This function does not unmarshal
 // the []byte data of the error or the result, it only stores the raw slices in the Response, to
 // allow for any unmarshalling to occur at the caller's discretion.
-func (r *Response) parseFromBytes(data []byte) error {
+func (r *Response) parseFromBytes(data []byte, opts decodeOptions) error {
 	var aux responseParseFormat
 	if err := getSonicAPI().Unmarshal(data, &aux); err != nil {
 		return err
 	}
 
-	if aux.JSONRPC != jsonRPCVersion {
+	if !versionAllowedOnDecode(aux.JSONRPC, opts.allowJSONRPC1) {
 		return fmt.Errorf("invalid JSON-RPC version: %s", aux.JSONRPC)
 	}
 	r.jsonrpc = aux.JSONRPC
 
-	// Validate that either result or error is present
+	// Validate that either result or error is present. A raw null error is treated as
+	// absent: JSON-RPC 1.0 always carries "error":null alongside a result, and strict
+	// 2.0 servers occasionally emit an explicit "error":null too.
 	resultExists := len(aux.Result) > 0
-	errorExists := len(aux.Error) > 0
+	errorExists := len(aux.Error) > 0 && !bytes.Equal(bytes.TrimSpace(aux.Error), []byte("null"))
+
+	// JSON-RPC 1.0 error responses carry "result":null alongside the error object. Treat a
+	// null result as absent only when a real error is present and 1.0 is allowed; strict 2.0
+	// keeps "result":null as a valid result value.
+	if opts.allowJSONRPC1 && resultExists && errorExists &&
+		bytes.Equal(bytes.TrimSpace(aux.Result), []byte("null")) {
+		resultExists = false
+	}
 
 	if !resultExists && !errorExists {
 		return errors.New("response must contain either result or error")
@@ -208,13 +219,15 @@ func (r *Response) parseFromBytes(data []byte) error {
 	}
 
 	// Assign result or error accordingly
-	if aux.Result != nil {
+	if resultExists {
 		r.result = aux.Result
 	} else {
 		r.rawError = aux.Error
 	}
 
-	if err := r.Validate(); err != nil {
+	// Version is already validated above against the (possibly relaxed) decode set, so
+	// skip the strict version check here; it is enforced on the encode path instead.
+	if err := r.validate(false); err != nil {
 		return fmt.Errorf("failed to parse JSON-RPC response: %w", err)
 	}
 
@@ -222,7 +235,7 @@ func (r *Response) parseFromBytes(data []byte) error {
 }
 
 // parseFromReader parses a JSON-RPC response from a reader.
-func (r *Response) parseFromReader(reader io.Reader, expectedSize int) error {
+func (r *Response) parseFromReader(reader io.Reader, expectedSize int, opts decodeOptions) error {
 	// 16KB chunks by default
 	chunkSize := defaultChunkSize
 	data, err := readAll(reader, int64(chunkSize), expectedSize)
@@ -230,7 +243,7 @@ func (r *Response) parseFromReader(reader io.Reader, expectedSize int) error {
 		return err
 	}
 
-	return r.parseFromBytes(data)
+	return r.parseFromBytes(data, opts)
 }
 
 // unmarshalID unmarshals the raw ID bytes into the ID field.
