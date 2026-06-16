@@ -238,7 +238,7 @@ jobs:
         if: ${{ steps.compute_tag.outputs.is_prerelease == 'true' }}
         uses: orhun/git-cliff-action@v4
         with:
-          args: --current --no-exec
+          args: --current --tag ${{ steps.compute_tag.outputs.tag }} --no-exec
         env:
           GITHUB_REPO:  ${{ github.repository }}
           GITHUB_TOKEN: ${{ github.token }}
@@ -264,6 +264,7 @@ jobs:
                           && steps.git-cliff-rc.outputs.content
                           || steps.git-cliff-final.outputs.content }}
           prerelease: ${{ steps.compute_tag.outputs.is_prerelease }}
+          make_latest: ${{ steps.compute_tag.outputs.is_prerelease == 'false' }}  # finals only
         env:
           GITHUB_TOKEN: ${{ github.token }}
 
