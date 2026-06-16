@@ -26,7 +26,7 @@ func TestRandomJSONRPCID(t *testing.T) {
 		duplicates := 0
 
 		// Generate 1000 IDs and check for uniqueness
-		for i := 0; i < 1000; i++ {
+		for range 1000 {
 			id := RandomJSONRPCID()
 			if seen[id] {
 				duplicates++
